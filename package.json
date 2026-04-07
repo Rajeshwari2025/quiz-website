@@ -1,0 +1,24 @@
+{
+  "name": "secure-quiz-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace @quiz/api\" \"npm run dev --workspace @quiz/web\"",
+    "dev:api": "npm run dev --workspace @quiz/api",
+    "dev:web": "npm run dev --workspace @quiz/web",
+    "build": "npm run build --workspace @quiz/shared && npm run build --workspace @quiz/ui && npm run build --workspace @quiz/api && npm run build --workspace @quiz/web",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate --workspace @quiz/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace @quiz/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3"
+  }
+}
+

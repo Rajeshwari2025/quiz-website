@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "jsx": "preserve",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@quiz/shared": ["packages/shared/src/index.ts"],
+      "@quiz/shared/*": ["packages/shared/src/*"],
+      "@quiz/ui": ["packages/ui/src/index.ts"],
+      "@quiz/ui/*": ["packages/ui/src/*"]
+    }
+  }
+}
+

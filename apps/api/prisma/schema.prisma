@@ -1,0 +1,316 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  FACULTY
+  STUDENT
+}
+
+enum QuizVersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum AccessMode {
+  AUTHENTICATED_ONLY
+  GUEST_ALLOWED
+}
+
+enum ResultVisibility {
+  IMMEDIATE
+  SCORE_ONLY
+  MANUAL_RELEASE
+}
+
+enum QuestionType {
+  SINGLE
+  MULTI
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  ABANDONED
+}
+
+enum AttemptEventType {
+  STARTED
+  AUTOSAVE
+  TAB_SWITCH
+  COPY_BLOCKED
+  PASTE_BLOCKED
+  SUBMITTED
+  AUTO_SUBMITTED
+  QUESTION_NAVIGATION
+}
+
+enum StudentFieldType {
+  TEXT
+  EMAIL
+  NUMBER
+  PHONE
+}
+
+enum LiveSessionState {
+  SCHEDULED
+  LIVE
+  ENDED
+}
+
+model User {
+  id               String        @id @default(cuid())
+  role             UserRole
+  email            String        @unique
+  passwordHash     String
+  firstName        String
+  lastName         String
+  profile          Json?
+  sessions         AuthSession[]
+  authoredQuizzes  Quiz[]        @relation("QuizAuthor")
+  authoredVersions QuizVersion[] @relation("QuizVersionAuthor")
+  attempts         QuizAttempt[]
+  facultyInvites   FacultyInvite[] @relation("InviteCreator")
+  hostedSessions   LiveSession[] @relation("LiveSessionHost")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model AuthSession {
+  id               String   @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model FacultyInvite {
+  id          String   @id @default(cuid())
+  email       String
+  token       String   @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdAt   DateTime @default(now())
+  createdBy   User?    @relation("InviteCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([email, expiresAt])
+}
+
+model Quiz {
+  id                  String        @id @default(cuid())
+  slug                String        @unique
+  title               String
+  createdById         String
+  latestVersionNumber Int           @default(1)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  createdBy           User          @relation("QuizAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  versions            QuizVersion[]
+  attempts            QuizAttempt[]
+}
+
+model QuizVersion {
+  id                    String              @id @default(cuid())
+  quizId                String
+  versionNumber         Int
+  parentVersionId       String?
+  createdById           String
+  status                QuizVersionStatus   @default(DRAFT)
+  title                 String
+  durationMinutes       Int                 @default(30)
+  deadline              DateTime?
+  attemptLimit          Int                 @default(1)
+  shuffleQuestions      Boolean             @default(false)
+  accessMode            AccessMode          @default(AUTHENTICATED_ONLY)
+  resultVisibility      ResultVisibility    @default(IMMEDIATE)
+  quizCode              String?             @unique
+  publishedAt           DateTime?
+  resultsPublishedAt    DateTime?
+  retiredAt             DateTime?
+  negativeMarkingEnabled Boolean            @default(false)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  quiz                  Quiz                @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  parentVersion         QuizVersion?        @relation("QuizVersionLineage", fields: [parentVersionId], references: [id], onDelete: SetNull)
+  childVersions         QuizVersion[]       @relation("QuizVersionLineage")
+  createdBy             User                @relation("QuizVersionAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  studentFieldDefinitions StudentFieldDefinition[]
+  questions             QuizQuestion[]
+  attempts              QuizAttempt[]
+  analytics             QuizVersionAnalytics?
+  questionAnalytics     QuestionAnalytics[]
+  liveSessions          LiveSession[]
+
+  @@unique([quizId, versionNumber])
+  @@index([quizId, status])
+}
+
+model StudentFieldDefinition {
+  id           String           @id @default(cuid())
+  quizVersionId String
+  key          String
+  label        String
+  type         StudentFieldType
+  required     Boolean
+  placeholder  String?
+  validation   Json?
+  sortOrder    Int
+  createdAt    DateTime         @default(now())
+  quizVersion  QuizVersion      @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([quizVersionId, key])
+  @@index([quizVersionId, sortOrder])
+}
+
+model QuizQuestion {
+  id            String            @id @default(cuid())
+  quizVersionId String
+  key           String
+  prompt        String
+  explanation   String?
+  questionType  QuestionType
+  marks         Float
+  negativeMarks Float?
+  sortOrder     Int
+  quizVersion   QuizVersion       @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+  options       QuizOption[]
+  answers       AttemptAnswer[]
+  analytics     QuestionAnalytics[]
+
+  @@unique([quizVersionId, key])
+  @@index([quizVersionId, sortOrder])
+}
+
+model QuizOption {
+  id         String       @id @default(cuid())
+  questionId String
+  key        String
+  text       String
+  isCorrect  Boolean
+  sortOrder  Int
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, key])
+  @@index([questionId, sortOrder])
+}
+
+model QuizAttempt {
+  id                    String         @id @default(cuid())
+  quizId                String
+  quizVersionId         String
+  userId                String?
+  status                AttemptStatus  @default(IN_PROGRESS)
+  accessMode            AccessMode
+  studentIdentityKey    String
+  studentProfileSnapshot Json
+  quizSnapshot          Json
+  shuffledQuestionOrder Json
+  score                 Float          @default(0)
+  maxScore              Float          @default(0)
+  percentage            Float          @default(0)
+  correctCount          Int            @default(0)
+  wrongCount            Int            @default(0)
+  unansweredCount       Int            @default(0)
+  startedAt             DateTime       @default(now())
+  expiresAt             DateTime
+  submittedAt           DateTime?
+  resultReleasedAt      DateTime?
+  metadata              Json?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  quiz                  Quiz           @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizVersion           QuizVersion    @relation(fields: [quizVersionId], references: [id], onDelete: Restrict)
+  user                  User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  answers               AttemptAnswer[]
+  events                AttemptEvent[]
+
+  @@index([quizVersionId, status])
+  @@index([userId, createdAt])
+  @@index([quizVersionId, studentIdentityKey])
+}
+
+model AttemptAnswer {
+  id                String       @id @default(cuid())
+  attemptId         String
+  questionId        String
+  selectedOptionIds Json
+  isCorrect         Boolean?
+  awardedMarks      Float?
+  savedAt           DateTime     @default(now())
+  attempt           QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question          QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, questionId])
+}
+
+model AttemptEvent {
+  id        String           @id @default(cuid())
+  attemptId String
+  type      AttemptEventType
+  payload   Json?
+  createdAt DateTime         @default(now())
+  attempt   QuizAttempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId, createdAt])
+}
+
+model QuizVersionAnalytics {
+  id                String      @id @default(cuid())
+  quizVersionId     String      @unique
+  attemptsCount     Int         @default(0)
+  averageScore      Float       @default(0)
+  highestScore      Float       @default(0)
+  lowestScore       Float       @default(0)
+  averagePercentage Float       @default(0)
+  updatedAt         DateTime    @updatedAt
+  quizVersion       QuizVersion @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+}
+
+model QuestionAnalytics {
+  id           String      @id @default(cuid())
+  quizVersionId String
+  questionId   String
+  attemptsCount Int        @default(0)
+  correctCount Int         @default(0)
+  wrongCount   Int         @default(0)
+  skippedCount Int         @default(0)
+  accuracyRate Float       @default(0)
+  averageMarks Float       @default(0)
+  updatedAt    DateTime    @updatedAt
+  quizVersion  QuizVersion @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+  question     QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([quizVersionId, questionId])
+}
+
+model LiveSession {
+  id            String           @id @default(cuid())
+  quizVersionId String
+  hostId        String
+  state         LiveSessionState @default(SCHEDULED)
+  startsAt      DateTime?
+  endsAt        DateTime?
+  settings      Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  quizVersion   QuizVersion      @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+  host          User             @relation("LiveSessionHost", fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([quizVersionId, state])
+}
+
